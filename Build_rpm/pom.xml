@@ -22,7 +22,6 @@
           <configuration>
                     <copyright>2019, UnixUtils</copyright>
                     <group>Development/Tools</group>
-                    <release>1.0.0</release>
                     <mappings>
                         <mapping>
                             <directory>/opt/myapp.ini</directory>
