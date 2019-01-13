@@ -1,7 +1,0 @@
-import requests
-import pprint
-
-r = requests.get('https://unixutils.com/')  
-pprint(r.url) 
-pprint(r.history)
-pprint(r.status_code)
