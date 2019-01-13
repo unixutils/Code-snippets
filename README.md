@@ -1,11 +1,6 @@
-#Usage:
+# Code snippets
+This directory contains multiple subdirectories with names indicating the content.
+The subdirectories has code snippets as a demonstration for explaining the funcionality used in the code.
 
-#Download the files and run with python.
+Visit https://unixutils.com for Blog posts for these code snippets.
 
-#running requests_example.py
-
-python requests_example.py  
-
-#running requests_param.py
-
-python requests_param.py
