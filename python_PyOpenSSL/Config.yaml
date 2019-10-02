@@ -1,0 +1,40 @@
+---
+# # # # # # # # # # # # # # # # # # # # # # # # #
+# This file is used to specify configurations   #
+# for creating/renewing Certificates.           #
+# Always specify full path wherever applicable. #
+# # # # # # # # # # # # # # # # # # # # # # # # #
+
+# CSR Configuration
+# CSR configurations will be ignored, when an 
+# existing CSR path is provided in 'OldCsrFile'
+
+CSR:
+   commonName: "unixutils"                            # Mandatory if 'OldCsrFile' is not used
+   stateOrProvinceName: "MyState"                     # Mandatory if 'OldCsrFile' is not used
+   localityName: "MyLocality "                        # Mandatory if 'OldCsrFile' is not used
+   organizationName: "unixutils"                      # Mandatory if 'OldCsrFile' is not used
+   organizationalUnitName: "Certification Authority"  # Mandatory if 'OldCsrFile' is not used
+   emailAddress: "admin@unixutils.com"                # Mandatory if 'OldCsrFile' is not used
+   countryName: "IN"                                  # Mandatory if 'OldCsrFile' is not used
+   OldCsrFile:                                        # Optional
+   OldCsrFileType:                                    # Mandatory IF 'OldCsrFile' is used, example: "PEM"
+
+# CERT Configuration   
+# The followin configurations are applied on
+# the generated certificate.
+# validty: Date Format: YYYYMMDDhhmmssZ (suffixed with 'Z')
+
+CERT:
+    KeyType: RSA                                      # Mandatory
+    BitLength: 2048                                   # Mandatory
+    digestType: 'sha256'                              # Mandatory
+    CertDir: '/home/admin/mysslcerts'                 # Mandatory
+    validfrom: "20200101000000Z"                      # Mandatory
+    validto: "20210101000000Z"                        # Mandatory
+
+# CREATE CERTIFICATE WITH OLD PRIVATE KEY
+
+REUSE:
+    OldPrivateKey:                                    # Optional 
+    OldPrivateKeyType:                                # Mandatory IF OldPrivateKey is used, example: "PEM"
