@@ -1,0 +1,22 @@
+[Unit]
+Description=MyService Demo
+
+[Service]
+User=root
+Group=root
+SyslogIdentifier=MyService
+Type=forking
+ExecStart=/path/to/MyService.py start
+ExecStop=/path/to/MyService.py stop
+SuccessExitStatus=0
+TimeoutStartSec=60s
+TimeoutStopSec=60s
+
+PIDFile=/var/run/MyService.pid
+
+Restart=on-failure
+RestartSec=1
+StartLimitInterval=0
+
+[Install]
+WantedBy=multi-user.target
