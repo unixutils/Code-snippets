@@ -2,7 +2,7 @@ Generating Access Token:
 
 Endpoint: https://ims-na1.adobelogin.com/ims/exchange/jwt
 Method: POST
-Payload (Pass following URL-encoded parameters in the body):
+Payload (Pass following parameters in the body):
 
 {
   "client_id": "YOUR_CLIENT_ID",
@@ -23,8 +23,8 @@ Expected HTTP Response:
 2xx RC with following json object.
 {
   "token_type": "bearer",
-  "access_token": "{ACCESS_TOKEN}",
-  "expires_in": "{EXPIRATION_TIME}"
+  "access_token": "{access_token}",
+  "expires_in": "{expiration_time}"
 }
 
 
@@ -71,7 +71,7 @@ Headers:
   "Content-Type": "application/x-www-form-urlencoded"
 }
 
-Payload (Pass following URL-encoded parameters in the body):
+Payload (Pass following parameters in the body):
 
 {
   "path": {PACKAGE_PATH},
@@ -100,7 +100,7 @@ FILTERS represents the a list of objects containing JCR paths.
 ]
 
 Other details/Dependencies: 
-The build trigger in code fresh shall use a variable called 'CONTENT_PATHS' to acceot a string with list of comma separated paths.
+The build trigger in code fresh shall use a variable called 'CONTENT_PATHS' to accept a string with list of comma separated paths.
 Example: "/content/siteA,/conf/myconfig,/etc/designs/mydesign". The script shall read this input to construct list of objects containing JCR paths and use it request body.
 
 Reference(s):
@@ -123,7 +123,11 @@ Query parameters:
 Expected HTTP response:
 2xx RC with json object containing package details.
 
-Downloading built package:
+Reference(s):
+https://experienceleague.adobe.com/docs/experience-manager-65/administering/operations/curl.html?lang=en
+https://experienceleague.adobe.com/docs/experience-manager-cloud-manager/content/using/content-copy.html?lang=en#:~:text=to%20copy%20content.-,Log%20into%20Cloud%20Manager%20at%20my.cloudmanager.adobe.com,Content%20from%20the%20ellipsis%20menu.
+
+Downloading built package from source instance:
 Endpoint: {source_aem_instance}/crx/packmgr/service/.json/etc/packages/{GROUP_NAME}/{PACKAGE_NAME}.zip
 Method: GET
 Headers:
@@ -133,3 +137,244 @@ Headers:
 
 Expected HTTP response:
 2xx RC with byte content for package.zip in response body.
+
+Reference(s):
+https://experienceleague.adobe.com/docs/experience-manager-cloud-manager/content/using/content-copy.html?lang=en#:~:text=to%20copy%20content.-,Log%20into%20Cloud%20Manager%20at%20my.cloudmanager.adobe.com,Content%20from%20the%20ellipsis%20menu.
+
+Uploading package to target instance:
+Endpoint: {target_aem_instance}/crx/packmgr/service/.json
+Method: POST
+Headers:
+{
+  "Authorization": f"Bearer {access_token}",
+  "Content-Type": "multipart/form-data"
+}
+
+Payload (Pass following parameters in the body):
+{
+  "cmd": "upload",
+  "force": "true",
+  "package": "<binary content of package to upload (package.zip)>"
+}
+
+Expected HTTP response:
+2xx RC with json containing uploaded package details.
+
+Reference(s):
+https://experienceleague.adobe.com/docs/experience-manager-cloud-manager/content/using/content-copy.html?lang=en#:~:text=to%20copy%20content.-,Log%20into%20Cloud%20Manager%20at%20my.cloudmanager.adobe.com,Content%20from%20the%20ellipsis%20menu.
+
+Installing Uploaded package to target instance:
+Endpoint: {target_aem_instance}/crx/packmgr/service/.json/etc/packages/{group_name}/{package_name}.zip
+Method: POST
+Headers:
+{
+  "Authorization": f"Bearer {access_token}",
+  "Content-Type": "application/x-www-form-urlencoded"
+}
+
+Payload (Pass following parameters in the body):
+{
+  "cmd": "install"
+}
+
+Expected HTTP response:
+2xx RC with json containing uploaded package details.
+
+Reference(s):
+https://experienceleague.adobe.com/docs/experience-manager-cloud-manager/content/using/content-copy.html?lang=en#:~:text=to%20copy%20content.-,Log%20into%20Cloud%20Manager%20at%20my.cloudmanager.adobe.com,Content%20from%20the%20ellipsis%20menu.
+
+Clear cache on target instance:
+Endpoint: {target_aem_instance}/crx/packmgr/service/.json/etc/packages/{group_name}/{package_name}.zip
+Method: POST
+Headers:
+{
+  "Authorization": f"Bearer {access_token}",
+  "CQ-Action": "Deactivate",
+  'CQ-Handle': {CONTENT_PATH},
+  'CQ-Path':   {CONTENT_PATH},
+  "Content-Type": "application/octet-stream"
+}
+
+Other details/Dependencies: 
+The Request does not specifying multiple CONTENT_PATH (JCR Paths) for which cache needs to be cleared/invalidated. Hence the script shall loop through the list of paths to make a cache clear request. The list of paths will be acquired from code fresh variable 'CONTENT_PATHS' containing string of comma separated paths as mentioned previously in the section titled 'Updating package filters'
+
+Expected HTTP response:
+2xx RC with json containing uploaded package details.
+
+Reference(s):
+https://experienceleague.adobe.com/docs/experience-manager-cloud-manager/content/using/content-copy.html?lang=en#:~:text=to%20copy%20content.-,Log%20into%20Cloud%20Manager%20at%20my.cloudmanager.adobe.com,Content%20from%20the%20ellipsis%20menu.
+
+
+SCRIPT:
+
+def get_access_token():
+    claims = {
+        "exp": int(time.time()) + 30 * 60,
+        "iss": os.environ["ORGANIZATION_ID"],
+        "sub": os.environ["TECHNICAL_ACCOUNT_ID"],
+        "https://ims-na1.adobelogin.com/s/ent_cloudmgr_sdk": True,
+        "aud": f"https://ims-na1.adobelogin.com/c/{os.environ['CLIENT_ID']}"
+    }
+    encoded_jwt = jwt.encode(claims, os.environ["CM_PRIVATE_KEY"].replace("\\n", "\n"), algorithm='RS256')
+    
+    response = requests.post("https://ims-na1.adobelogin.com/ims/exchange/jwt", data={
+        "client_id": os.environ["CLIENT_ID"],
+        "client_secret": os.environ["CLIENT_SECRET"],
+        "jwt_token": encoded_jwt.decode("utf-8")
+    })
+    response.raise_for_status()
+    return response.json()["access_token"]
+
+def create_package(aem_instance, access_token):
+    group_name = os.environ["CF_BUILD_INITIATOR"]
+    package_name = f"{group_name}_package_{int(time.time())}"
+
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
+
+    params = {
+        "cmd": "create"
+    }
+    
+    # Formulate the endpoint URL with the desired groupName and packageName
+    endpoint_url = f"{aem_instance}/crx/packmgr/service/.json/etc/packages/{group_name}/{package_name}.zip"
+    
+    response = requests.post(endpoint_url, headers=headers, params=params)
+    response.raise_for_status()
+    
+    # Construct the package path based on AEM's conventional path structure
+    return f"/etc/packages/{group_name}/{package_name}.zip"
+
+def update_package_filters(aem_instance, access_token, package_path):
+    filter_paths_str = os.environ["JCR_CONTENT_PATHS"]
+    filter_paths = [path.strip() for path in filter_paths_str.split(",")]
+    allowed_prefixes = ["/content/", "/conf/", "/etc/", "/var/workflow/models/"]
+    for path in filter_paths:
+        if not any(path.startswith(prefix) for prefix in allowed_prefixes):
+            raise ValueError(f"The path '{path}' is not allowed!")
+
+    filters = [{"root": path} for path in filter_paths]
+    filter_payload = json.dumps(filters)
+
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
+
+    payload = {
+        "path": package_path,
+        "filter": filter_payload,
+        "_charset_": "utf-8"
+    }
+
+    response = requests.post(f"{aem_instance}/crx/packmgr/update.jsp", headers=headers, data=payload)
+    response.raise_for_status()
+    return response.json()
+
+def build_package(aem_instance, package_path, access_token):
+    HEADERS = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
+    
+    payload = {
+        "cmd": "build"
+    }
+    
+    response = requests.post(f"{aem_instance}/crx/packmgr/service/.json{package_path}", data=payload, headers=HEADERS)
+    response.raise_for_status()
+    return response.json()
+
+def upload_package(aem_instance, local_package, jwt_token):
+    HEADERS = {
+        "Authorization": f"Bearer {jwt_token}",
+    }
+    
+    with open(local_package, "rb") as f:
+        payload = {
+            "cmd": "upload",
+            "force": "true",
+            "package": f
+        }
+        response = requests.post(
+            f"{aem_instance}/crx/packmgr/service/.json",
+            headers=HEADERS,
+            files=payload
+        )
+        response.raise_for_status()
+        return response.json()
+
+
+def install_package(aem_instance, package_path, jwt_token):
+    HEADERS = {
+        "Authorization": f"Bearer {jwt_token}",
+    }
+    
+    payload = {
+        "cmd": "install"
+    }
+    response = requests.post(
+        f"{aem_instance}/crx/packmgr/service/.json{package_path}",
+        headers=HEADERS,
+        data=payload
+    )
+    response.raise_for_status()
+    return response.json()
+
+def clear_cache(aem_instance, access_token, paths_string):
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "CQ-Action": "Deactivate",
+        "Content-Type": "application/octet-stream"
+    }
+
+    paths = paths_string.split(',')
+    for path in paths:
+        headers["CQ-Handle"] = path
+        headers["CQ-Path"] = path
+        response = requests.post(f"{aem_instance}/dispatcher/invalidate.cache", headers=headers)
+        response.raise_for_status()
+
+    return True
+
+def main():
+    parser = argparse.ArgumentParser(description="AEM Content Sync and Cache Eviction Tool")
+    parser.add_argument("--content_sync", action="store_true", help="Enable content synchronization")
+    parser.add_argument("--evict_cache", action="store_true", help="Enable cache eviction")
+
+    args = parser.parse_args()
+
+    target_instance = os.environ["TARGET_AEM_INSTANCE"]
+    content_paths = os.environ["JCR_CONTENT_PATHS"]
+
+    # Generate the access token
+    access_token = get_access_token()
+
+    if args.content_sync:
+        source_instance = os.environ["SOURCE_AEM_INSTANCE"]
+        
+        # Create the package on the source AEM instance
+        package_path = create_package(source_instance, access_token)
+
+        # Update package filters in source instance
+        update_filters(source_instance, package_path, content_filters, headers)
+
+        # Build package in source instance
+        build_package(source_instance, package_path, headers)
+
+        # Download the package from the source AEM instance
+        downloaded_package_path = download_package(source_instance, access_token, package_path, f"/tmp/{package_name}.zip")
+
+        # Upload the package to the target AEM instance
+        upload_package(target_instance, access_token, downloaded_package_path)
+
+    if args.evict_cache:
+        # Clear cache for the content paths
+        for path in content_paths.split(','):
+            clear_cache(target_instance, access_token, path)
+
+
+if __name__ == "__main__":
+    main()
