@@ -249,6 +249,7 @@ def create_package(aem_instance, access_token):
 
 def update_package_filters(aem_instance, access_token, package_path):
     filter_paths_str = os.environ["JCR_CONTENT_PATHS"]
+    filter_paths_str = filter_paths_str.strip()
     filter_paths = [path.strip() for path in filter_paths_str.split(",")]
     allowed_prefixes = ["/content/", "/conf/", "/etc/", "/var/workflow/models/"]
     for path in filter_paths:
@@ -273,7 +274,7 @@ def update_package_filters(aem_instance, access_token, package_path):
     response.raise_for_status()
     return response.json()
 
-def build_package(aem_instance, package_path, access_token):
+def build_package(aem_instance, access_token, package_path):
     HEADERS = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/x-www-form-urlencoded"
@@ -287,29 +288,47 @@ def build_package(aem_instance, package_path, access_token):
     response.raise_for_status()
     return response.json()
 
-def upload_package(aem_instance, local_package, jwt_token):
+def download_package(aem_instance, access_token, package_path):
+    headers = {
+        "Authorization": f"Bearer {access_token}"
+    }
+    response = requests.get(f"{aem_instance}{package_path}", headers=headers)
+    response.raise_for_status()
+
+    # Extract package name from package_path
+    package_name = os.path.basename(package_path)
+
+    # Use the current working directory as the destination
+    local_package_path = os.path.join(os.getcwd(), package_name)
+
+    with open(abs_path, 'wb') as f:
+        f.write(response.content)
+
+    return local_package_path
+
+def upload_and_install_package(aem_instance, access_token, local_package):
     HEADERS = {
-        "Authorization": f"Bearer {jwt_token}",
+        "Authorization": f"Bearer {access_token}",
     }
     
     with open(local_package, "rb") as f:
         payload = {
-            "cmd": "upload",
+            "file": f,
+            "name": os.path.basename(local_package),  # This gets the package name from the zip file's filename.
             "force": "true",
-            "package": f
+            "install": "true"
         }
         response = requests.post(
-            f"{aem_instance}/crx/packmgr/service/.json",
+            f"{aem_instance}/crx/packmgr/service.jsp",
             headers=HEADERS,
             files=payload
         )
         response.raise_for_status()
-        return response.json()
+        return response.text
 
-
-def install_package(aem_instance, package_path, jwt_token):
+def install_package(aem_instance, access_token, package_path):
     HEADERS = {
-        "Authorization": f"Bearer {jwt_token}",
+        "Authorization": f"Bearer {access_token}",
     }
     
     payload = {
@@ -329,9 +348,11 @@ def clear_cache(aem_instance, access_token, paths_string):
         "CQ-Action": "Deactivate",
         "Content-Type": "application/octet-stream"
     }
-
-    paths = paths_string.split(',')
+    content_path_string = os.environ["JCR_CONTENT_PATHS"]
+    content_path_string = content_path_string.strip()
+    paths = content_path_string.split(',')
     for path in paths:
+        path = path.strip()
         headers["CQ-Handle"] = path
         headers["CQ-Path"] = path
         response = requests.post(f"{aem_instance}/dispatcher/invalidate.cache", headers=headers)
@@ -342,12 +363,11 @@ def clear_cache(aem_instance, access_token, paths_string):
 def main():
     parser = argparse.ArgumentParser(description="AEM Content Sync and Cache Eviction Tool")
     parser.add_argument("--content_sync", action="store_true", help="Enable content synchronization")
-    parser.add_argument("--evict_cache", action="store_true", help="Enable cache eviction")
+    parser.add_argument("--clear_cache", action="store_true", help="Enable cache eviction")
 
     args = parser.parse_args()
 
     target_instance = os.environ["TARGET_AEM_INSTANCE"]
-    content_paths = os.environ["JCR_CONTENT_PATHS"]
 
     # Generate the access token
     access_token = get_access_token()
@@ -359,21 +379,20 @@ def main():
         package_path = create_package(source_instance, access_token)
 
         # Update package filters in source instance
-        update_filters(source_instance, package_path, content_filters, headers)
+        update_package_filters(source_instance, access_token, package_path)
 
         # Build package in source instance
-        build_package(source_instance, package_path, headers)
+        build_package(source_instance, access_token, package_path)
 
         # Download the package from the source AEM instance
-        downloaded_package_path = download_package(source_instance, access_token, package_path, f"/tmp/{package_name}.zip")
+        downloaded_package_path = download_package(source_instance, access_token, package_path)
 
-        # Upload the package to the target AEM instance
-        upload_package(target_instance, access_token, downloaded_package_path)
+        # Upload and install the package on the target AEM instance
+        upload_and_install_package(target_instance, access_token, downloaded_package_path)
 
-    if args.evict_cache:
-        # Clear cache for the content paths
-        for path in content_paths.split(','):
-            clear_cache(target_instance, access_token, path)
+    if args.clear_cache:
+        # Clear content cache on target instance.
+        clear_cache(target_instance, access_token)
 
 
 if __name__ == "__main__":
