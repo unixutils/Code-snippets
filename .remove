@@ -34,7 +34,7 @@ https://experienceleague.adobe.com/docs/experience-platform/landing/platform-api
 
 Creating a Package:
 
-Endpoint: {aem_instance}/crx/packmgr/service/.json/etc/packages/{group_name}/{package_name}.zip
+Endpoint: {source_aem_instance}/crx/packmgr/service/.json/etc/packages/{group_name}/{package_name}.zip
 Method: POST
 Headers:
 {
@@ -61,9 +61,9 @@ Payload:
 Reference(s):
 https://experienceleague.adobe.com/docs/experience-manager-65/administering/operations/curl.html?lang=en
 
-Updating package filers (specify JCR paths to package)
+Updating package filters (specify JCR paths to package)
 
-Endpoint: {aem_instance}/crx/packmgr/update.jsp
+Endpoint: {source_aem_instance}/crx/packmgr/update.jsp
 Method: POST
 Headers:
 {
@@ -102,3 +102,34 @@ FILTERS represents the a list of objects containing JCR paths.
 Other details/Dependencies: 
 The build trigger in code fresh shall use a variable called 'CONTENT_PATHS' to acceot a string with list of comma separated paths.
 Example: "/content/siteA,/conf/myconfig,/etc/designs/mydesign". The script shall read this input to construct list of objects containing JCR paths and use it request body.
+
+Reference(s):
+https://experienceleague.adobe.com/docs/experience-manager-65/administering/operations/curl.html?lang=en
+https://experienceleague.adobe.com/docs/experience-manager-cloud-manager/content/using/content-copy.html?lang=en#:~:text=to%20copy%20content.-,Log%20into%20Cloud%20Manager%20at%20my.cloudmanager.adobe.com,Content%20from%20the%20ellipsis%20menu.
+
+Building a package:
+Endpoint: {source_aem_instance}/crx/packmgr/service/.json/etc/packages/{GROUP_NAME}/{PACKAGE_NAME}.zip
+Method: POST
+Headers:
+{
+  "Authorization": f"Bearer {access_token}"
+}
+
+Query parameters:
+{
+  "cmd": "build"
+}
+
+Expected HTTP response:
+2xx RC with json object containing package details.
+
+Downloading built package:
+Endpoint: {source_aem_instance}/crx/packmgr/service/.json/etc/packages/{GROUP_NAME}/{PACKAGE_NAME}.zip
+Method: GET
+Headers:
+{
+  "Authorization": f"Bearer {access_token}"
+}
+
+Expected HTTP response:
+2xx RC with byte content for package.zip in response body.
