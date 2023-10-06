@@ -206,6 +206,13 @@ https://experienceleague.adobe.com/docs/experience-manager-cloud-manager/content
 
 
 SCRIPT:
+#!/usr/bin/python
+import os
+import jwt
+import requests
+import time
+import argparse
+import json
 
 def get_access_token():
     claims = {
