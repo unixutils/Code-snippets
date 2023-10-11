@@ -404,3 +404,117 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
+####### ALTERNATE OPTION THAT DOES NOT CALL  AUTH'r/PUBLISH'R DIRECTLY
+
+import os
+import jwt
+import time
+import requests
+from retry import retry
+
+
+def get_env_var(var_name):
+    var_value = os.environ.get(var_name)
+    if not var_value:
+        raise ValueError(f"Environment variable {var_name} is not set")
+    return var_value
+
+
+IMS_API_ENDPOINT = "https://ims-na1.adobelogin.com"
+CLOUD_MANAGER_API_ENDPOINT = "https://cloudmanager.adobe.io"
+
+
+def get_access_token(organization_id, technical_account_id, client_id, client_secret, private_key):
+    claims = {
+        "exp": int(time.time()) + 30 * 60,
+        "iss": organization_id,
+        "sub": technical_account_id,
+        "https://ims-na1.adobelogin.com/s/ent_cloudmgr_sdk": True,
+        "aud": f"{IMS_API_ENDPOINT}/c/{client_id}"
+    }
+    encoded_jwt = jwt.encode(claims, private_key.replace("\\n", "\n"), algorithm='RS256')
+    
+    response = requests.post(f"{IMS_API_ENDPOINT}/ims/exchange/jwt", data={
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "jwt_token": encoded_jwt.decode("utf-8")
+    })
+    response.raise_for_status()
+    return response.json()["access_token"]
+
+
+@retry(tries=5, delay=10, backoff=2)
+def create_content_set(token, program_id, paths, client_id):
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'x-gw-ims-org-id': organization_id,
+        'x-api-key': client_id,
+        'Content-Type': 'application/json'
+    }
+    payload = {"paths": paths}
+
+    response = requests.post(f"{CLOUD_MANAGER_API_ENDPOINT}/api/program/{program_id}/contentSet", headers=headers, json=payload)
+    if response.status_code != 201:
+        raise Exception(f"Failed to create content set: {response.text}")
+    return response.json()["id"]
+
+
+@retry(tries=5, delay=10, backoff=2)
+def create_content_flow(token, program_id, content_set_id, src_environment_id, dest_environment_id, client_id):
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'x-gw-ims-org-id': organization_id,
+        'x-api-key': client_id,
+        'Content-Type': 'application/json'
+    }
+    payload = {
+        "contentSetId": content_set_id,
+        "srcEnvironmentId": src_environment_id,
+        "destEnvironmentId": dest_environment_id
+    }
+    
+    response = requests.post(f"{CLOUD_MANAGER_API_ENDPOINT}/api/program/{program_id}/contentFlow", headers=headers, json=payload)
+    if response.status_code != 201:
+        raise Exception(f"Failed to create content flow: {response.text}")
+    return response.json()["id"]
+
+
+@retry(tries=5, delay=10, backoff=2)
+def check_content_flow_status(token, program_id, content_flow_id, client_id):
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'x-gw-ims-org-id': organization_id,
+        'x-api-key': client_id
+    }
+    
+    response = requests.get(f"{CLOUD_MANAGER_API_ENDPOINT}/api/program/{program_id}/contentFlow/{content_flow_id}", headers=headers)
+    if response.status_code != 200:
+        raise Exception(f"Failed to check content flow status: {response.text}")
+    return response.json()["status"]
+
+
+def main():
+    organization_id = get_env_var('ORGANIZATION_ID')
+    technical_account_id = get_env_var('TECHNICAL_ACCOUNT_ID')
+    client_id = get_env_var('CLIENT_ID')
+    client_secret = get_env_var('CLIENT_SECRET')
+    private_key = get_env_var('CM_PRIVATE_KEY')
+    program_id = get_env_var('PROGRAM_ID')
+    src_environment_id = get_env_var('SRC_ENVIRONMENT_ID')
+    dest_environment_id = get_env_var('DEST_ENVIRONMENT_ID')
+
+    token = get_access_token(organization_id, technical_account_id, client_id, client_secret, private_key)
+
+    content_set_id = create_content_set(token, program_id, [{"path": "/path/to/content", "excluded": ["excluded/path1", "excluded/path2"]}], client_id)
+    content_flow_id = create_content_flow(token, program_id, content_set_id, src_environment_id, dest_environment_id, client_id)
+    status = check_content_flow_status(token, program_id, content_flow_id, client_id)
+
+    print(f"Content Flow Status: {status}")
+
+
+if __name__ == "__main__":
+    main()
