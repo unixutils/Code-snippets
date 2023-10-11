@@ -455,7 +455,7 @@ def create_content_set(token, program_id, paths, client_id):
         'x-api-key': client_id,
         'Content-Type': 'application/json'
     }
-    payload = {"paths": paths}
+    payload = {"paths": [{"path": path} for path in paths]}
 
     response = requests.post(f"{CLOUD_MANAGER_API_ENDPOINT}/api/program/{program_id}/contentSet", headers=headers, json=payload)
     if response.status_code != 201:
@@ -498,7 +498,7 @@ def check_content_flow_status(token, program_id, content_flow_id, client_id):
 
 
 def main():
-    organization_id = get_env_var('ORGANIZATION_ID')
+organization_id = get_env_var('ORGANIZATION_ID')
     technical_account_id = get_env_var('TECHNICAL_ACCOUNT_ID')
     client_id = get_env_var('CLIENT_ID')
     client_secret = get_env_var('CLIENT_SECRET')
@@ -506,14 +506,15 @@ def main():
     program_id = get_env_var('PROGRAM_ID')
     src_environment_id = get_env_var('SRC_ENVIRONMENT_ID')
     dest_environment_id = get_env_var('DEST_ENVIRONMENT_ID')
+    jcr_content_paths = get_env_var('JCR_CONTENT_PATHS').split(',')
 
     token = get_access_token(organization_id, technical_account_id, client_id, client_secret, private_key)
 
-    content_set_id = create_content_set(token, program_id, [{"path": "/path/to/content", "excluded": ["excluded/path1", "excluded/path2"]}], client_id)
+    content_set_id = create_content_set(token, program_id, jcr_content_paths, client_id)
     content_flow_id = create_content_flow(token, program_id, content_set_id, src_environment_id, dest_environment_id, client_id)
     status = check_content_flow_status(token, program_id, content_flow_id, client_id)
 
-    print(f"Content Flow Status: {status}")
+    print(f"Content flow/sync Status: {status}")
 
 
 if __name__ == "__main__":
