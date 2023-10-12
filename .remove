@@ -416,6 +416,8 @@ import time
 import requests
 from retry import retry
 
+IMS_API_ENDPOINT = "https://ims-na1.adobelogin.com"
+CLOUD_MANAGER_API_ENDPOINT = "https://cloudmanager.adobe.io"
 
 def get_env_var(var_name):
     var_value = os.environ.get(var_name)
@@ -423,10 +425,17 @@ def get_env_var(var_name):
         raise ValueError(f"Environment variable {var_name} is not set")
     return var_value
 
-
-IMS_API_ENDPOINT = "https://ims-na1.adobelogin.com"
-CLOUD_MANAGER_API_ENDPOINT = "https://cloudmanager.adobe.io"
-
+def decode_paths(encoded_string):
+    decoded_paths = []
+    paths = encoded_string.split(';')
+    for path in paths:
+        if '|' in path:
+            main_path, exclusions = path.split('|', 1)
+            exclusion_list = exclusions.split(',')
+            decoded_paths.append({"path": main_path, "excluded": exclusion_list})
+        else:
+            decoded_paths.append({"path": path, "excluded": []})
+    return decoded_paths
 
 def get_access_token(organization_id, technical_account_id, client_id, client_secret, private_key):
     claims = {
@@ -448,14 +457,23 @@ def get_access_token(organization_id, technical_account_id, client_id, client_se
 
 
 @retry(tries=5, delay=10, backoff=2)
-def create_content_set(token, program_id, paths, client_id):
+def create_content_set(token, program_id, paths, client_id, user_id):
+    current_timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
+    content_set_name = f"content_set_{user_id}_{current_timestamp}"
+    content_set_description = f"content_set_{user_id}_{current_timestamp} created using codefresh pipeline"
+
     headers = {
         'Authorization': f'Bearer {token}',
         'x-gw-ims-org-id': organization_id,
         'x-api-key': client_id,
         'Content-Type': 'application/json'
     }
-    payload = {"paths": [{"path": path} for path in paths]}
+    
+    payload = {
+        "name": content_set_name,
+        "description": content_set_description,
+        "paths": paths
+    }
 
     response = requests.post(f"{CLOUD_MANAGER_API_ENDPOINT}/api/program/{program_id}/contentSet", headers=headers, json=payload)
     if response.status_code != 201:
@@ -464,20 +482,26 @@ def create_content_set(token, program_id, paths, client_id):
 
 
 @retry(tries=5, delay=10, backoff=2)
-def create_content_flow(token, program_id, content_set_id, src_environment_id, dest_environment_id, client_id):
+def create_content_flow(token, src_program_id, src_environment_id, content_set_id, dest_environment_id, dest_program_id, tier, client_id):
+    if tier not in ['author', 'publish']:
+        raise ValueError("Invalid tier value. It should be either 'author' or 'publish'.")
+
     headers = {
         'Authorization': f'Bearer {token}',
         'x-gw-ims-org-id': organization_id,
         'x-api-key': client_id,
         'Content-Type': 'application/json'
     }
+
     payload = {
         "contentSetId": content_set_id,
-        "srcEnvironmentId": src_environment_id,
-        "destEnvironmentId": dest_environment_id
+        "destEnvironmentId": dest_environment_id,
+        "tier": tier,
+        "includeACL": False,
+        "destProgramId": dest_program_id
     }
-    
-    response = requests.post(f"{CLOUD_MANAGER_API_ENDPOINT}/api/program/{program_id}/contentFlow", headers=headers, json=payload)
+
+    response = requests.post(f"{CLOUD_MANAGER_API_ENDPOINT}/api/program/{src_program_id}/environment/{src_environment_id}/contentFlow", headers=headers, json=payload)
     if response.status_code != 201:
         raise Exception(f"Failed to create content flow: {response.text}")
     return response.json()["id"]
@@ -498,20 +522,23 @@ def check_content_flow_status(token, program_id, content_flow_id, client_id):
 
 
 def main():
-organization_id = get_env_var('ORGANIZATION_ID')
+    organization_id = get_env_var('ORGANIZATION_ID')
     technical_account_id = get_env_var('TECHNICAL_ACCOUNT_ID')
     client_id = get_env_var('CLIENT_ID')
     client_secret = get_env_var('CLIENT_SECRET')
     private_key = get_env_var('CM_PRIVATE_KEY')
-    program_id = get_env_var('PROGRAM_ID')
+    src_program_id = get_env_var('SRC_PROGRAM_ID')
+    dest_program_id = get_env_var('DEST_PROGRAM_ID')
     src_environment_id = get_env_var('SRC_ENVIRONMENT_ID')
     dest_environment_id = get_env_var('DEST_ENVIRONMENT_ID')
-    jcr_content_paths = get_env_var('JCR_CONTENT_PATHS').split(',')
+    encoded_paths = get_env_var('JCR_CONTENT_PATHS')
+    jcr_content_paths = decode_paths(encoded_paths)
+    tier = get_env_var('TIER')
 
     token = get_access_token(organization_id, technical_account_id, client_id, client_secret, private_key)
 
-    content_set_id = create_content_set(token, program_id, jcr_content_paths, client_id)
-    content_flow_id = create_content_flow(token, program_id, content_set_id, src_environment_id, dest_environment_id, client_id)
+    content_set_id = create_content_set(token, program_id_src, jcr_content_paths, client_id)
+    content_flow_id = create_content_flow(token, src_program_id, src_environment_id, content_set_id, dest_environment_id, dest_program_id, tier, client_id)
     status = check_content_flow_status(token, program_id, content_flow_id, client_id)
 
     print(f"Content flow/sync Status: {status}")
