@@ -546,3 +546,143 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+------------------------------
+
+
+provider "google" {
+  // Your provider configuration here
+}
+
+// Enable the reCAPTCHA API
+resource "google_project_service" "recaptcha_api" {
+  service = "recaptchaenterprise.googleapis.com"
+  disable_dependent_services = true
+}
+
+// Create an API key
+resource "google_api_key" "my_api_key" {
+  key_id      = "my-recaptcha-key"
+  project     = "your-project-id"
+
+  api_target {
+    service = "recaptchaenterprise.googleapis.com"
+  }
+
+  restrictions {
+    browser_key_restrictions {
+      allowed_referrers = ["example1.com", "example2.com"]
+    }
+  }
+}
+
+// Create a service account
+resource "google_service_account" "recaptcha_service_account" {
+  account_id   = "recaptcha-service-account"
+  display_name = "reCAPTCHA Service Account"
+  project      = "your-project-id"
+}
+
+// Grant the service account access to reCAPTCHA API
+resource "google_project_iam_binding" "recaptcha_iam" {
+  role    = "roles/recaptchaenterprise.user"
+  project = "your-project-id"
+
+  members = [
+    "serviceAccount:${google_service_account.recaptcha_service_account.email}"
+  ]
+}
+
+
+----------------------
+
+Frontend changes:
+
+Example: ON USER INTERACTION
+
+Create the request body and save it in a file named request.json. Be sure to make the following replacements:
+
+TOKEN: The token returned from the grecaptcha.enterprise.execute() call.
+USER_ACTION: Optional. The user-initiated action specified in the grecaptcha.enterprise.execute() call. Learn more about actions .
+{
+  "event": {
+    "token": "TOKEN",
+    "expectedAction": "USER_ACTION",
+    "siteKey": "<SITE_KEY>",
+  }
+}
+Send an HTTP POST request with the saved JSON data to the url below. Be sure to make the following replacements:
+
+API_KEY: The API key associated with the current project
+https://recaptchaenterprise.googleapis.com/v1/projects/<PROJECT_ID>/assessments?key=<API_KEY>
+
+Evaluate specific user interactions to provide meaningful results. The example below shows how to protect a LOGIN action.
+
+1. Load the JavaScript API within the head element of your web page:
+<head>
+  <script src="https://www.google.com/recaptcha/enterprise.js?render=<SITE_KEY>"></script>
+  <!-- Your code -->
+</head>
+
+2. Add an execute call on the interaction:
+<script>
+  function onClick(e) {
+    e.preventDefault();
+    grecaptcha.enterprise.ready(async () => {
+      const token = await grecaptcha.enterprise.execute('<SITE_KEY>', {action: 'LOGIN'});
+    });
+  }
+</script>
+
+The execute call generates a token. After the token is generated, send the reCAPTCHA Enterprise token to your application backend.
+
+Example: ON AN HTML BUTTON
+
+The example below uses a button and a named action to provide meaningful results.
+
+1. Load the JavaScript API within the head element of your web page:
+<head>
+  <script src="https://www.google.com/recaptcha/enterprise.js?render=<SITE_KEY>"></script>
+  <!-- Your code -->
+</head>
+
+2. Define a callback function to handle the token:
+<!-- Replace the variables below. -->
+<script>
+  function onSubmit(token) {
+    document.getElementById("demo-form").submit();
+  }
+</script>
+
+3. Add attributes to your HTML button:
+<button class="g-recaptcha"
+    data-sitekey="<SITE_KEY>"
+    data-callback='onSubmit'
+    data-action='submit'>
+  Submit
+</button>
+
+When this button is used to perform an action on your website, the g-recaptcha-response POST parameter contains the response token.
+The execute call generates a token. After the token is generated, send the reCAPTCHA Enterprise token to your application backend.
+
+Backend changes:
+
+Create the request body:
+
+TOKEN: The token returned from the grecaptcha.enterprise.execute() call from front end.
+
+USER_ACTION: Optional. The user-initiated action specified in the grecaptcha.enterprise.execute() call. Learn more about actions .
+
+{
+  "event": {
+    "token": "TOKEN",
+    "expectedAction": "USER_ACTION",
+    "siteKey": "<SITE_KEY>",
+  }
+}
+
+Send an HTTP POST request with the created JSON data to the url below.
+
+API_KEY: The API key associated with the current project
+https://recaptchaenterprise.googleapis.com/v1/projects/<PROJECT_ID>/assessments?key=<API_KEY>
